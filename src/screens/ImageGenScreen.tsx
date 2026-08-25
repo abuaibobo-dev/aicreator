@@ -3,11 +3,11 @@ import {
   ActivityIndicator, Image, ScrollView, StatusBar, Text,
   TextInput, TouchableOpacity, View, Share, Alert,
 } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import { downloadAsync, documentDirectory } from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import { T } from '../lib/theme';
 import { optimizePrompt } from '../lib/deepseek';
-import { buildImageUrl, IMAGE_PRESETS, IMAGE_STYLES } from '../lib/imagegen';
+import { generateImage, IMAGE_PRESETS, IMAGE_STYLES } from '../lib/imagegen';
 
 export default function ImageGenScreen() {
   const [input, setInput] = useState('');
@@ -17,6 +17,7 @@ export default function ImageGenScreen() {
   const [selectedPreset, setSelectedPreset] = useState(0);
   const [selectedStyle, setSelectedStyle] = useState('');
   const [loadingStep, setLoadingStep] = useState('');
+  const [provider, setProvider] = useState('');
 
   const generate = async () => {
     if (!input.trim() || loading) return;
@@ -30,15 +31,16 @@ export default function ImageGenScreen() {
       const optimized = await optimizePrompt(prompt, 'image');
       setOptimizedPrompt(optimized);
 
-      setLoadingStep('🎨 生成 4K 图片中...');
+      setLoadingStep('🎨 生成图片中（Boogu-Image → Pollinations）...');
       const preset = IMAGE_PRESETS[selectedPreset];
-      const url = buildImageUrl({
+      const result = await generateImage({
         prompt: optimized,
         width: preset.width,
         height: preset.height,
         enhance: true,
       });
-      setImageUri(url);
+      setImageUri(result.url);
+      setProvider(result.provider);
     } catch (e: any) {
       Alert.alert('生成失败', e.message);
     } finally {
@@ -52,8 +54,8 @@ export default function ImageGenScreen() {
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') { Alert.alert('需要权限', '请在设置中允许访问相册'); return; }
-      const fileUri = FileSystem.documentDirectory + `aicreator_${Date.now()}.jpg`;
-      await FileSystem.downloadAsync(imageUri, fileUri);
+      const fileUri = documentDirectory + `aicreator_${Date.now()}.jpg`;
+      await downloadAsync(imageUri, fileUri);
       await MediaLibrary.saveToLibraryAsync(fileUri);
       Alert.alert('✅ 已保存', '图片已保存到相册');
     } catch (e: any) {
@@ -129,6 +131,7 @@ export default function ImageGenScreen() {
 
       {imageUri ? (
         <View style={s.imageContainer}>
+          {provider ? <Text style={{ color: '#999', fontSize: 11, marginBottom: 8, textAlign: 'center' }}>生成引擎：{provider}</Text> : null}
           <Image source={{ uri: imageUri }} style={s.image} resizeMode="contain" />
           <View style={s.actionRow}>
             <TouchableOpacity style={s.actionBtn} onPress={saveImage}>

@@ -4,7 +4,7 @@ import {
   TextInput, TouchableOpacity, View, Alert,
 } from 'react-native';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import { writeAsStringAsync, documentDirectory, EncodingType } from 'expo-file-system/legacy';
 import { T } from '../lib/theme';
 import { optimizePrompt } from '../lib/deepseek';
 import { generateMusic, MUSIC_GENRES, MUSIC_MOODS } from '../lib/musicgen';
@@ -45,8 +45,8 @@ export default function MusicScreen() {
 
       const arrayBuffer = await blob.arrayBuffer();
       const base64 = arrayBufferToBase64(arrayBuffer);
-      const uri = FileSystem.documentDirectory + `aicreator_music_${Date.now()}.wav`;
-      await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      const uri = documentDirectory + `aicreator_music_${Date.now()}.wav`;
+      await writeAsStringAsync(uri, base64, { encoding: EncodingType.Base64 });
 
       await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
       const { sound: newSound } = await Audio.Sound.createAsync({ uri });
