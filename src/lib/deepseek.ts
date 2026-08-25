@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { tryFreeProviders } from './freeProviders';
 
 export interface Settings {
   apiKey: string;
@@ -18,12 +19,12 @@ export async function saveSettings(s: Partial<Settings>) {
   await AsyncStorage.setItem('aicreator.settings', JSON.stringify({ ...cur, ...s }));
 }
 
-export async function callDeepSeek(
+async function callDeepSeekAPI(
   messages: { role: string; content: string }[],
   opts: { maxTokens?: number; temperature?: number } = {}
 ): Promise<string> {
   const s = await getSettings();
-  if (!s.apiKey) throw new Error('请先在设置中配置 DeepSeek API Key');
+  if (!s.apiKey) throw new Error('NO_KEY');
   const res = await fetch(`${s.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` },
@@ -38,6 +39,21 @@ export async function callDeepSeek(
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error?.message || `请求失败（${res.status}）`);
   return String(data?.choices?.[0]?.message?.content || '');
+}
+
+export async function callDeepSeek(
+  messages: { role: string; content: string }[],
+  opts: { maxTokens?: number; temperature?: number } = {}
+): Promise<string> {
+  try {
+    return await callDeepSeekAPI(messages, opts);
+  } catch (e: any) {
+    if (e.message === 'NO_KEY' || e.message.includes('401') || e.message.includes('403')) {
+      const free = await tryFreeProviders(messages);
+      if (free) return free.content;
+    }
+    throw e;
+  }
 }
 
 export async function optimizePrompt(userInput: string, type: 'image' | 'video' | 'music'): Promise<string> {
@@ -56,11 +72,27 @@ export async function optimizePrompt(userInput: string, type: 'image' | 'video' 
 export async function chatWithAI(
   history: { role: 'user' | 'assistant'; content: string }[],
   systemPrompt?: string
-): Promise<string> {
+): Promise<{ content: string; provider: string }> {
   const s = await getSettings();
-  if (!s.apiKey) throw new Error('请先在设置中配置 DeepSeek API Key');
-  return callDeepSeek([
+  const messages = [
     { role: 'system', content: systemPrompt || '你是一个智能助手，可以聊天、回答问题、提供创意建议。用中文回复。' },
     ...history.slice(-20),
-  ]);
+  ];
+  
+  if (s.apiKey) {
+    try {
+      const content = await callDeepSeekAPI(messages);
+      return { content, provider: `DeepSeek (${s.model})` };
+    } catch (e: any) {
+      if (e.message === 'NO_KEY' || e.message.includes('401')) {
+        const free = await tryFreeProviders(messages);
+        if (free) return { content: free.content, provider: free.provider };
+      }
+      throw e;
+    }
+  }
+  
+  const free = await tryFreeProviders(messages);
+  if (free) return { content: free.content, provider: free.provider };
+  throw new Error('请在设置中配置 API Key，或检查网络连接');
 }
